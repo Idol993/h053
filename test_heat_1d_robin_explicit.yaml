@@ -1,0 +1,30 @@
+pde_type: heat
+dimension: 1
+alpha: 1.0
+
+domain_1d:
+  x_min: 0.0
+  x_max: 1.0
+  nx: 50
+
+boundary_conditions_1d:
+  left:
+    type: robin
+    value: 1.0
+    robin_alpha: 10.0
+  right:
+    type: dirichlet
+    value: 0.0
+
+initial_condition:
+  type: constant
+  value: 0.0
+
+time:
+  dt: 0.0002
+  t_max: 0.02
+
+solver:
+  method: explicit
+  max_iterations: 10000
+  convergence_threshold: 1.0e-6

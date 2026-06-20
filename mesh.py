@@ -123,7 +123,7 @@ def adjust_dt_for_stability(config: PDEConfig, mesh: Mesh1D | Mesh2D) -> float:
 
 def is_large_scale(config: PDEConfig) -> bool:
     if config.dimension == 1:
-        return config.domain_1d.nx > 1000
+        return config.domain_1d.nx >= 1000
     nx = config.domain_2d.nx
     ny = config.domain_2d.ny
-    return nx * ny > 1_000_000
+    return nx * ny >= 1_000_000

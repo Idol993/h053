@@ -165,16 +165,66 @@ class HeatSolver:
         return u_new
 
     def _step_1d_implicit(self, u: np.ndarray) -> np.ndarray:
-        n = self.mesh.nx - 2
-        r = self.alpha * self.dt / (self.mesh.dx ** 2)
-        diag = np.full(n, 1 + 2 * r)
-        off_diag = np.full(n - 1, -r)
-        rhs = u[1:-1].copy()
+        nx = self.mesh.nx
+        dx = self.mesh.dx
+        r = self.alpha * self.dt / (dx ** 2)
         bc = self.config.boundary_conditions_1d
-        rhs[0] += r * self._bc_value(bc.left)
-        rhs[-1] += r * self._bc_value(bc.right)
-        u_new = u.copy()
-        u_new[1:-1] = thomas_solve(diag, off_diag, off_diag.copy(), rhs)
+
+        has_non_dirichlet = (
+            bc.left.type != BoundaryType.dirichlet
+            or bc.right.type != BoundaryType.dirichlet
+        )
+
+        if not has_non_dirichlet:
+            n = nx - 2
+            diag = np.full(n, 1 + 2 * r)
+            off_diag = np.full(n - 1, -r)
+            rhs = u[1:-1].copy()
+            rhs[0] += r * bc.left.value
+            rhs[-1] += r * bc.right.value
+            u_new = u.copy()
+            u_new[1:-1] = thomas_solve(diag, off_diag, off_diag.copy(), rhs)
+            u_new[0] = bc.left.value
+            u_new[-1] = bc.right.value
+            return u_new
+
+        n = nx
+        diag = np.full(n, 1.0 + 2 * r)
+        lower = np.full(n - 1, -r)
+        upper = np.full(n - 1, -r)
+        rhs = u.copy()
+
+        if bc.left.type == BoundaryType.dirichlet:
+            diag[0] = 1.0
+            upper[0] = 0.0
+            rhs[0] = bc.left.value
+        elif bc.left.type == BoundaryType.neumann:
+            diag[0] = -1.0
+            upper[0] = 1.0
+            rhs[0] = bc.left.value * dx
+        elif bc.left.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.left)
+            beta = bc.left.value
+            diag[0] = 1.0 + alpha * dx
+            upper[0] = -1.0
+            rhs[0] = beta * dx
+
+        if bc.right.type == BoundaryType.dirichlet:
+            diag[-1] = 1.0
+            lower[-1] = 0.0
+            rhs[-1] = bc.right.value
+        elif bc.right.type == BoundaryType.neumann:
+            diag[-1] = 1.0
+            lower[-1] = -1.0
+            rhs[-1] = bc.right.value * dx
+        elif bc.right.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.right)
+            beta = bc.right.value
+            diag[-1] = 1.0 + alpha * dx
+            lower[-1] = -1.0
+            rhs[-1] = beta * dx
+
+        u_new = thomas_solve(diag, upper, lower, rhs)
         return u_new
 
     def _solve_2d(self, result_buffer=None) -> list[np.ndarray]:
@@ -226,37 +276,180 @@ class HeatSolver:
 
     def _step_2d_implicit(self, u: np.ndarray, use_sparse: bool = False) -> np.ndarray:
         nx, ny = self.mesh.nx, self.mesh.ny
-        rx = self.alpha * self.dt / (self.mesh.dx ** 2)
-        ry = self.alpha * self.dt / (self.mesh.dy ** 2)
-        n = (nx - 2) * (ny - 2)
+        dx, dy = self.mesh.dx, self.mesh.dy
+        rx = self.alpha * self.dt / (dx ** 2)
+        ry = self.alpha * self.dt / (dy ** 2)
 
         bc = self.config.boundary_conditions_2d
+        has_non_dirichlet = (
+            bc.left.type != BoundaryType.dirichlet
+            or bc.right.type != BoundaryType.dirichlet
+            or bc.bottom.type != BoundaryType.dirichlet
+            or bc.top.type != BoundaryType.dirichlet
+        )
 
-        if use_sparse:
-            return self._step_2d_implicit_sparse(u, rx, ry, nx, ny, bc)
+        if not has_non_dirichlet:
+            n = (nx - 2) * (ny - 2)
+            if n <= 0:
+                u_new = u.copy()
+                u_new[0, :] = bc.left.value
+                u_new[-1, :] = bc.right.value
+                u_new[:, 0] = bc.bottom.value
+                u_new[:, -1] = bc.top.value
+                return u_new
 
-        if n <= 0:
-            return u.copy()
+            large_internal = is_large_scale(self.config)
+            if large_internal:
+                A = _build_2d_heat_matrix_sparse(rx, ry, nx - 2, ny - 2)
+                rhs = u[1:-1, 1:-1].flatten().copy()
+                rhs = _apply_2d_dirichlet_rhs(rhs, rx, ry, nx - 2, ny - 2, bc)
+                sol = spsolve(A, rhs)
+            else:
+                A = _build_2d_heat_matrix_dense(rx, ry, nx - 2, ny - 2)
+                rhs = u[1:-1, 1:-1].flatten().copy()
+                rhs = _apply_2d_dirichlet_rhs(rhs, rx, ry, nx - 2, ny - 2, bc)
+                sol = np.linalg.solve(A, rhs)
+            u_new = u.copy()
+            u_new[1:-1, 1:-1] = sol.reshape(nx - 2, ny - 2)
+            u_new[0, :] = bc.left.value
+            u_new[-1, :] = bc.right.value
+            u_new[:, 0] = bc.bottom.value
+            u_new[:, -1] = bc.top.value
+            return u_new
 
-        A = _build_2d_heat_matrix_dense(rx, ry, nx - 2, ny - 2)
-        rhs = u[1:-1, 1:-1].flatten().copy()
-        rhs = _apply_2d_bc_rhs(rhs, rx, ry, nx - 2, ny - 2, bc)
-        sol = np.linalg.solve(A, rhs)
-        u_new = u.copy()
-        u_new[1:-1, 1:-1] = sol.reshape(nx - 2, ny - 2)
-        return u_new
+        return self._step_2d_implicit_full(u, rx, ry, nx, ny, dx, dy, bc)
 
-    def _step_2d_implicit_sparse(self, u, rx, ry, nx, ny, bc):
-        n = (nx - 2) * (ny - 2)
-        if n <= 0:
-            return u.copy()
-        A = _build_2d_heat_matrix_sparse(rx, ry, nx - 2, ny - 2)
-        rhs = u[1:-1, 1:-1].flatten().copy()
-        rhs = _apply_2d_bc_rhs(rhs, rx, ry, nx - 2, ny - 2, bc)
+    def _step_2d_implicit_full(self, u, rx, ry, nx, ny, dx, dy, bc):
+        n = nx * ny
+        rows, cols, vals = [], [], []
+        rhs = np.zeros(n, dtype=np.float64)
+
+        def idx(i, j):
+            return i * ny + j
+
+        diag_val = 1.0 + 2.0 * rx + 2.0 * ry
+
+        for i in range(nx):
+            for j in range(ny):
+                k = idx(i, j)
+
+                if i == 0:
+                    if bc.left.type == BoundaryType.dirichlet:
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0)
+                        rhs[k] = bc.left.value
+                    elif bc.left.type == BoundaryType.neumann:
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(-1.0)
+                        rows.append(k)
+                        cols.append(idx(1, j))
+                        vals.append(1.0)
+                        rhs[k] = bc.left.value * dx
+                    elif bc.left.type == BoundaryType.robin:
+                        alpha = self._robin_alpha(bc.left)
+                        beta = bc.left.value
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0 + alpha * dx)
+                        rows.append(k)
+                        cols.append(idx(1, j))
+                        vals.append(-1.0)
+                        rhs[k] = beta * dx
+                elif i == nx - 1:
+                    if bc.right.type == BoundaryType.dirichlet:
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0)
+                        rhs[k] = bc.right.value
+                    elif bc.right.type == BoundaryType.neumann:
+                        rows.append(k)
+                        cols.append(idx(nx - 2, j))
+                        vals.append(-1.0)
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0)
+                        rhs[k] = bc.right.value * dx
+                    elif bc.right.type == BoundaryType.robin:
+                        alpha = self._robin_alpha(bc.right)
+                        beta = bc.right.value
+                        rows.append(k)
+                        cols.append(idx(nx - 2, j))
+                        vals.append(-1.0)
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0 + alpha * dx)
+                        rhs[k] = beta * dx
+                elif j == 0:
+                    if bc.bottom.type == BoundaryType.dirichlet:
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0)
+                        rhs[k] = bc.bottom.value
+                    elif bc.bottom.type == BoundaryType.neumann:
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(-1.0)
+                        rows.append(k)
+                        cols.append(idx(i, 1))
+                        vals.append(1.0)
+                        rhs[k] = bc.bottom.value * dy
+                    elif bc.bottom.type == BoundaryType.robin:
+                        alpha = self._robin_alpha(bc.bottom)
+                        beta = bc.bottom.value
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0 + alpha * dy)
+                        rows.append(k)
+                        cols.append(idx(i, 1))
+                        vals.append(-1.0)
+                        rhs[k] = beta * dy
+                elif j == ny - 1:
+                    if bc.top.type == BoundaryType.dirichlet:
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0)
+                        rhs[k] = bc.top.value
+                    elif bc.top.type == BoundaryType.neumann:
+                        rows.append(k)
+                        cols.append(idx(i, ny - 2))
+                        vals.append(-1.0)
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0)
+                        rhs[k] = bc.top.value * dy
+                    elif bc.top.type == BoundaryType.robin:
+                        alpha = self._robin_alpha(bc.top)
+                        beta = bc.top.value
+                        rows.append(k)
+                        cols.append(idx(i, ny - 2))
+                        vals.append(-1.0)
+                        rows.append(k)
+                        cols.append(k)
+                        vals.append(1.0 + alpha * dy)
+                        rhs[k] = beta * dy
+                else:
+                    rows.append(k)
+                    cols.append(k)
+                    vals.append(diag_val)
+                    rows.append(k)
+                    cols.append(idx(i - 1, j))
+                    vals.append(-rx)
+                    rows.append(k)
+                    cols.append(idx(i + 1, j))
+                    vals.append(-rx)
+                    rows.append(k)
+                    cols.append(idx(i, j - 1))
+                    vals.append(-ry)
+                    rows.append(k)
+                    cols.append(idx(i, j + 1))
+                    vals.append(-ry)
+                    rhs[k] = u[i, j]
+
+        A = sparse.csr_matrix((vals, (rows, cols)), shape=(n, n))
         sol = spsolve(A, rhs)
-        u_new = u.copy()
-        u_new[1:-1, 1:-1] = sol.reshape(nx - 2, ny - 2)
-        return u_new
+        return sol.reshape(nx, ny)
 
 
 def thomas_solve(
@@ -329,24 +522,18 @@ def _build_2d_heat_matrix_sparse(rx, ry, ni, nj):
     return sparse.csr_matrix((vals, (rows, cols)), shape=(n, n))
 
 
-def _apply_2d_bc_rhs(rhs, rx, ry, ni, nj, bc):
+def _apply_2d_dirichlet_rhs(rhs, rx, ry, ni, nj, bc):
     for j in range(nj):
         k = 0 * nj + j
-        rhs[k] += rx * _bc_val(bc.left)
+        rhs[k] += rx * bc.left.value
         k = (ni - 1) * nj + j
-        rhs[k] += rx * _bc_val(bc.right)
+        rhs[k] += rx * bc.right.value
     for i in range(ni):
         k = i * nj + 0
-        rhs[k] += ry * _bc_val(bc.bottom)
+        rhs[k] += ry * bc.bottom.value
         k = i * nj + (nj - 1)
-        rhs[k] += ry * _bc_val(bc.top)
+        rhs[k] += ry * bc.top.value
     return rhs
-
-
-def _bc_val(bc_model) -> float:
-    if bc_model.type == BoundaryType.dirichlet:
-        return bc_model.value
-    return 0.0
 
 
 def _eval_expression(expr: str) -> Callable:

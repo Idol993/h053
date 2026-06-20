@@ -138,7 +138,7 @@ class PoissonSolver:
             for it in range(self.max_iterations):
                 u_old = u.copy()
                 for i in range(1, nx - 1):
-                    u[i] = 0.5 * (u[i - 1] + u[i + 1] - dx ** 2 * f[i])
+                    u[i] = 0.5 * (u[i - 1] + u[i + 1] + dx ** 2 * f[i])
                 self._apply_bc_1d(u)
                 residual = np.max(np.abs(u - u_old))
                 if residual < self.threshold:
@@ -197,8 +197,8 @@ class PoissonSolver:
             elif bc.left.type == BoundaryType.robin:
                 alpha = self._robin_alpha(bc.left)
                 beta = bc.left.value
-                A[0, 0] = -1.0 + alpha * dx
-                A[0, 1] = 1.0
+                A[0, 0] = 1.0 + alpha * dx
+                A[0, 1] = -1.0
                 rhs[0] = beta * dx
 
             if bc.right.type == BoundaryType.dirichlet:
@@ -251,7 +251,7 @@ class PoissonSolver:
                         u[i, j] = (
                             (u[i - 1, j] + u[i + 1, j]) / dx ** 2
                             + (u[i, j - 1] + u[i, j + 1]) / dy ** 2
-                            - f[i, j]
+                            + f[i, j]
                         ) / coeff
                 self._apply_bc_2d(u)
                 residual = np.max(np.abs(u - u_old))
@@ -314,10 +314,10 @@ class PoissonSolver:
                         beta = bc.left.value
                         rows.append(k)
                         cols.append(k)
-                        vals.append(-1.0 + alpha * dx)
+                        vals.append(1.0 + alpha * dx)
                         rows.append(k)
                         cols.append(idx(1, j))
-                        vals.append(1.0)
+                        vals.append(-1.0)
                         rhs[k] = beta * dx
                 elif i == nx - 1:
                     if bc.right.type == BoundaryType.dirichlet:
@@ -362,10 +362,10 @@ class PoissonSolver:
                         beta = bc.bottom.value
                         rows.append(k)
                         cols.append(k)
-                        vals.append(-1.0 + alpha * dy)
+                        vals.append(1.0 + alpha * dy)
                         rows.append(k)
                         cols.append(idx(i, 1))
-                        vals.append(1.0)
+                        vals.append(-1.0)
                         rhs[k] = beta * dy
                 elif j == ny - 1:
                     if bc.top.type == BoundaryType.dirichlet:
