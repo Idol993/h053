@@ -78,6 +78,17 @@ def cli():
     help="Use numpy.memmap for large results (reduces memory usage).",
 )
 @click.option(
+    "--sample",
+    is_flag=True,
+    default=False,
+    help="Export sample slices (centerlines, boundary layers, stats) instead of full CSV for 2D large grids.",
+)
+@click.option(
+    "--summary/--no-summary",
+    default=True,
+    help="Export summary.json with problem stats and boundary residuals.",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -92,6 +103,8 @@ def solve(
     fps: int,
     use_nvenc: bool,
     use_memmap: bool,
+    sample: bool,
+    summary: bool,
     verbose: bool,
 ):
     """Solve a PDE based on the provided YAML configuration."""
@@ -169,10 +182,20 @@ def solve(
     fmt_parts = [f.strip().lower() for f in output_format.split("+")]
 
     if "csv" in fmt_parts:
-        click.echo("\nExporting CSV files...")
-        exporter = ResultExporter(pde_config, output_path)
-        csv_paths = exporter.export_csv(results, step_interval=step_interval)
-        click.echo(f"  Exported {len(csv_paths)} CSV files")
+        if sample and pde_config.dimension == 2:
+            click.echo("\nExporting sample slices (instead of full CSV)...")
+            exporter = ResultExporter(pde_config, output_path)
+            sample_output = exporter.export_sample(results, step_interval=step_interval)
+            total_samples = sum(len(v) for v in sample_output.values())
+            click.echo(f"  Exported {total_samples} sample files")
+            for key, paths in sample_output.items():
+                if paths:
+                    click.echo(f"    {key}: {len(paths)} files")
+        else:
+            click.echo("\nExporting CSV files...")
+            exporter = ResultExporter(pde_config, output_path)
+            csv_paths = exporter.export_csv(results, step_interval=step_interval)
+            click.echo(f"  Exported {len(csv_paths)} CSV files")
 
     if use_memmap and result_buffer is not None:
         pass
@@ -206,6 +229,25 @@ def solve(
 
     if use_memmap and result_buffer is not None:
         result_buffer.close()
+
+    if summary:
+        click.echo("\nExporting summary.json...")
+        exporter = ResultExporter(pde_config, output_path)
+        is_sparse = getattr(solver, "_use_sparse", False)
+        memmap_size = 0.0
+        if use_memmap and result_buffer is not None and result_buffer.memmap_path is not None:
+            memmap_size = result_buffer.memmap_path.stat().st_size / (1024 * 1024)
+        summary_path = exporter.export_summary(
+            results,
+            solve_time=solve_time,
+            solver_name=solver_cls.__name__,
+            use_memmap=use_memmap,
+            memmap_size_mb=memmap_size,
+            output_format=output_format,
+            step_interval=step_interval,
+            is_sparse=is_sparse,
+        )
+        click.echo(f"  Summary saved: {summary_path}")
 
     click.echo("\n" + "=" * 60)
     click.echo("  Done!")

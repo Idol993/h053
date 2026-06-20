@@ -83,6 +83,13 @@ class WaveSolver:
             return bc_model.robin_alpha
         return 0.0
 
+    def _robin_beta(self, bc_model) -> float:
+        if bc_model.type == BoundaryType.robin:
+            if bc_model.robin_beta is not None:
+                return bc_model.robin_beta
+            return bc_model.value
+        return 0.0
+
     def _apply_bc_1d(self, u: np.ndarray):
         bc = self.config.boundary_conditions_1d
         if bc.left.type == BoundaryType.dirichlet:
@@ -91,7 +98,7 @@ class WaveSolver:
             u[0] = u[1] - bc.left.value * self.mesh.dx
         elif bc.left.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.left)
-            beta = bc.left.value
+            beta = self._robin_beta(bc.left)
             u[0] = (u[1] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
         if bc.right.type == BoundaryType.dirichlet:
@@ -100,7 +107,7 @@ class WaveSolver:
             u[-1] = u[-2] + bc.right.value * self.mesh.dx
         elif bc.right.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.right)
-            beta = bc.right.value
+            beta = self._robin_beta(bc.right)
             u[-1] = (u[-2] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
     def _apply_bc_2d(self, u: np.ndarray):
@@ -112,7 +119,7 @@ class WaveSolver:
             u[0, :] = u[1, :] - bc.left.value * self.mesh.dx
         elif bc.left.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.left)
-            beta = bc.left.value
+            beta = self._robin_beta(bc.left)
             u[0, :] = (u[1, :] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
         if bc.right.type == BoundaryType.dirichlet:
@@ -121,7 +128,7 @@ class WaveSolver:
             u[-1, :] = u[-2, :] + bc.right.value * self.mesh.dx
         elif bc.right.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.right)
-            beta = bc.right.value
+            beta = self._robin_beta(bc.right)
             u[-1, :] = (u[-2, :] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
         if bc.bottom.type == BoundaryType.dirichlet:
@@ -130,7 +137,7 @@ class WaveSolver:
             u[:, 0] = u[:, 1] - bc.bottom.value * self.mesh.dy
         elif bc.bottom.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.bottom)
-            beta = bc.bottom.value
+            beta = self._robin_beta(bc.bottom)
             u[:, 0] = (u[:, 1] + beta * self.mesh.dy) / (1.0 + alpha * self.mesh.dy)
 
         if bc.top.type == BoundaryType.dirichlet:
@@ -139,7 +146,7 @@ class WaveSolver:
             u[:, -1] = u[:, -2] + bc.top.value * self.mesh.dy
         elif bc.top.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.top)
-            beta = bc.top.value
+            beta = self._robin_beta(bc.top)
             u[:, -1] = (u[:, -2] + beta * self.mesh.dy) / (1.0 + alpha * self.mesh.dy)
 
     def _solve_1d(self, result_buffer=None) -> list[np.ndarray]:

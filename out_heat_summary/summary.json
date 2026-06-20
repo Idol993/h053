@@ -1,0 +1,51 @@
+{
+  "pde_type": "heat",
+  "dimension": 1,
+  "mesh": {
+    "nx": 50,
+    "dx": 0.02040816326530612,
+    "x_min": 0.0,
+    "x_max": 1.0
+  },
+  "time": {
+    "dt": 0.0001978342357351103,
+    "t_max": 0.02,
+    "n_steps": 101
+  },
+  "solver": {
+    "method": "implicit",
+    "name": "HeatSolver",
+    "is_sparse": false,
+    "solve_time_seconds": 0.03563666343688965
+  },
+  "memmap": {
+    "enabled": false,
+    "size_mb": 0.0
+  },
+  "export": {
+    "format": "csv",
+    "n_frames_total": 102,
+    "n_frames_exported": 11,
+    "step_interval": 10
+  },
+  "stats": {
+    "min": 0.0,
+    "max": 0.0671564575366417,
+    "mean": 0.010050991388727462,
+    "std": 0.01741361340888961
+  },
+  "boundary_residuals": {
+    "left": {
+      "type": "robin",
+      "max_abs": 0.0,
+      "rms": 0.0,
+      "mean": 0.0
+    },
+    "right": {
+      "type": "dirichlet",
+      "max_abs": 0.0,
+      "rms": 0.0,
+      "mean": 0.0
+    }
+  }
+}

@@ -50,6 +50,13 @@ class PoissonSolver:
             return bc_model.robin_alpha
         return 0.0
 
+    def _robin_beta(self, bc_model) -> float:
+        if bc_model.type == BoundaryType.robin:
+            if bc_model.robin_beta is not None:
+                return bc_model.robin_beta
+            return bc_model.value
+        return 0.0
+
     def _apply_bc_1d(self, u: np.ndarray):
         bc = self.config.boundary_conditions_1d
         if bc.left.type == BoundaryType.dirichlet:
@@ -58,7 +65,7 @@ class PoissonSolver:
             u[0] = u[1] - bc.left.value * self.mesh.dx
         elif bc.left.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.left)
-            beta = bc.left.value
+            beta = self._robin_beta(bc.left)
             u[0] = (u[1] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
         if bc.right.type == BoundaryType.dirichlet:
@@ -67,7 +74,7 @@ class PoissonSolver:
             u[-1] = u[-2] + bc.right.value * self.mesh.dx
         elif bc.right.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.right)
-            beta = bc.right.value
+            beta = self._robin_beta(bc.right)
             u[-1] = (u[-2] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
     def _apply_bc_2d(self, u: np.ndarray):
@@ -79,7 +86,7 @@ class PoissonSolver:
             u[0, :] = u[1, :] - bc.left.value * self.mesh.dx
         elif bc.left.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.left)
-            beta = bc.left.value
+            beta = self._robin_beta(bc.left)
             u[0, :] = (u[1, :] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
         if bc.right.type == BoundaryType.dirichlet:
@@ -88,7 +95,7 @@ class PoissonSolver:
             u[-1, :] = u[-2, :] + bc.right.value * self.mesh.dx
         elif bc.right.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.right)
-            beta = bc.right.value
+            beta = self._robin_beta(bc.right)
             u[-1, :] = (u[-2, :] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
         if bc.bottom.type == BoundaryType.dirichlet:
@@ -97,7 +104,7 @@ class PoissonSolver:
             u[:, 0] = u[:, 1] - bc.bottom.value * self.mesh.dy
         elif bc.bottom.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.bottom)
-            beta = bc.bottom.value
+            beta = self._robin_beta(bc.bottom)
             u[:, 0] = (u[:, 1] + beta * self.mesh.dy) / (1.0 + alpha * self.mesh.dy)
 
         if bc.top.type == BoundaryType.dirichlet:
@@ -106,7 +113,7 @@ class PoissonSolver:
             u[:, -1] = u[:, -2] + bc.top.value * self.mesh.dy
         elif bc.top.type == BoundaryType.robin:
             alpha = self._robin_alpha(bc.top)
-            beta = bc.top.value
+            beta = self._robin_beta(bc.top)
             u[:, -1] = (u[:, -2] + beta * self.mesh.dy) / (1.0 + alpha * self.mesh.dy)
 
     def _solve_1d(self, result_buffer=None) -> list[np.ndarray]:
@@ -196,7 +203,7 @@ class PoissonSolver:
                 rhs[0] = bc.left.value * dx
             elif bc.left.type == BoundaryType.robin:
                 alpha = self._robin_alpha(bc.left)
-                beta = bc.left.value
+                beta = self._robin_beta(bc.left)
                 A[0, 0] = 1.0 + alpha * dx
                 A[0, 1] = -1.0
                 rhs[0] = beta * dx
@@ -211,7 +218,7 @@ class PoissonSolver:
                 rhs[-1] = bc.right.value * dx
             elif bc.right.type == BoundaryType.robin:
                 alpha = self._robin_alpha(bc.right)
-                beta = bc.right.value
+                beta = self._robin_beta(bc.right)
                 A[-1, -2] = -1.0
                 A[-1, -1] = 1.0 + alpha * dx
                 rhs[-1] = beta * dx
@@ -311,7 +318,7 @@ class PoissonSolver:
                         rhs[k] = bc.left.value * dx
                     elif bc.left.type == BoundaryType.robin:
                         alpha = self._robin_alpha(bc.left)
-                        beta = bc.left.value
+                        beta = self._robin_beta(bc.left)
                         rows.append(k)
                         cols.append(k)
                         vals.append(1.0 + alpha * dx)
@@ -335,7 +342,7 @@ class PoissonSolver:
                         rhs[k] = bc.right.value * dx
                     elif bc.right.type == BoundaryType.robin:
                         alpha = self._robin_alpha(bc.right)
-                        beta = bc.right.value
+                        beta = self._robin_beta(bc.right)
                         rows.append(k)
                         cols.append(idx(nx - 2, j))
                         vals.append(-1.0)
@@ -359,7 +366,7 @@ class PoissonSolver:
                         rhs[k] = bc.bottom.value * dy
                     elif bc.bottom.type == BoundaryType.robin:
                         alpha = self._robin_alpha(bc.bottom)
-                        beta = bc.bottom.value
+                        beta = self._robin_beta(bc.bottom)
                         rows.append(k)
                         cols.append(k)
                         vals.append(1.0 + alpha * dy)
@@ -383,7 +390,7 @@ class PoissonSolver:
                         rhs[k] = bc.top.value * dy
                     elif bc.top.type == BoundaryType.robin:
                         alpha = self._robin_alpha(bc.top)
-                        beta = bc.top.value
+                        beta = self._robin_beta(bc.top)
                         rows.append(k)
                         cols.append(idx(i, ny - 2))
                         vals.append(-1.0)
