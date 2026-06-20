@@ -1,0 +1,73 @@
+======================================================================
+TEST 1: Poisson 2D with robin_alpha and robin_beta (new format)
+======================================================================
+  Solver method: gauss-seidel
+  Solution range: [0.000000, 0.064777]
+  Left boundary (u[0, :]) range: [0.000000, 0.052966]
+
+=== Poisson: Boundary Residual Check ===
+Left Robin (alpha=10.0, beta=0.5):
+  u[0, 5] = 0.03779063, u[1, 5] = 0.03466003
+  Residual at j=5: 0.00e+00
+  Residual at j=0 (corner): -5.00e-01
+  Residual max_abs (excluding corners): 3.33e-16
+  Check formula: alpha*u + dudn = 0.500000, beta = 0.500000
+  Match: True
+
+======================================================================
+TEST 2: Same config, modify to Heat equation
+======================================================================
+  Solver method: gauss_seidel
+  Solution range: [0.000000, 0.029546]
+  Left boundary (u[0, :]) range: [0.000000, 0.029546]
+
+=== Heat: Boundary Residual Check ===
+Left Robin (alpha=10.0, beta=0.5):
+  u[0, 5] = 0.02768874, u[1, 5] = 0.02196790
+  Residual at j=5: 0.00e+00
+  Residual at j=0 (corner): -5.00e-01
+  Residual max_abs (excluding corners): 2.22e-16
+  Check formula: alpha*u + dudn = 0.500000, beta = 0.500000
+  Match: True
+
+======================================================================
+TEST 3: Same config, modify to Wave equation
+======================================================================
+  Solution range: [0.000000, 0.031530]
+  Left boundary (u[0, :]) range: [0.000000, 0.031530]
+
+=== Wave: Boundary Residual Check ===
+Left Robin (alpha=10.0, beta=0.5):
+  u[0, 5] = 0.03147839, u[1, 5] = 0.02672926
+  Residual at j=5: 0.00e+00
+  Residual at j=0 (corner): -5.00e-01
+  Residual max_abs (excluding corners): 3.33e-16
+  Check formula: alpha*u + dudn = 0.500000, beta = 0.500000
+  Match: True
+
+======================================================================
+TEST 4: Old format - using 'value' for beta (backward compatibility)
+======================================================================
+  Old format - bc_left.value = 0.5
+  Old format - bc_left.robin_alpha = None
+  Old format - bc_left.robin_beta = None
+  solver._robin_beta(bc_left_old) = 0.5
+  Solution range: [0.000000, 0.243408]
+  Left boundary (u[0, :]) range: [0.000000, 0.243408]
+
+=== Poisson (old format): Boundary Residual Check ===
+Left Robin (alpha=0.0, beta=0.5):
+  u[0, 5] = 0.13274069, u[1, 5] = 0.11992018
+  Residual at j=5: -1.11e-16
+  Residual at j=0 (corner): -5.00e-01
+  Residual max_abs (excluding corners): 4.44e-16
+  Check formula: alpha*u + dudn = 0.500000, beta = 0.500000
+  Match: True
+
+======================================================================
+CONCLUSION
+======================================================================
+  All tests show Robin boundary conditions working correctly.
+  The 'max_abs=0.5' in summary.json is due to corner singularities.
+  Interior points of the Robin boundary satisfy alpha*u + dudn = beta.
+  Both new format (robin_alpha, robin_beta) and old format (value) work.

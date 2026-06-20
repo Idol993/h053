@@ -181,13 +181,18 @@ def solve(
 
     fmt_parts = [f.strip().lower() for f in output_format.split("+")]
 
+    n_sample_files = 0
+    sample_enabled = sample and pde_config.dimension == 2
+    original_grid_shape = None
+
     if "csv" in fmt_parts:
-        if sample and pde_config.dimension == 2:
+        if sample_enabled:
             click.echo("\nExporting sample slices (instead of full CSV)...")
             exporter = ResultExporter(pde_config, output_path)
             sample_output = exporter.export_sample(results, step_interval=step_interval)
-            total_samples = sum(len(v) for v in sample_output.values())
-            click.echo(f"  Exported {total_samples} sample files")
+            n_sample_files = sum(len(v) for v in sample_output.values())
+            original_grid_shape = (pde_config.domain_2d.nx, pde_config.domain_2d.ny)
+            click.echo(f"  Exported {n_sample_files} sample files")
             for key, paths in sample_output.items():
                 if paths:
                     click.echo(f"    {key}: {len(paths)} files")
@@ -246,6 +251,9 @@ def solve(
             output_format=output_format,
             step_interval=step_interval,
             is_sparse=is_sparse,
+            sampling_enabled=sample_enabled,
+            original_grid_shape=original_grid_shape,
+            n_sample_files=n_sample_files,
         )
         click.echo(f"  Summary saved: {summary_path}")
 

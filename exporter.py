@@ -217,6 +217,9 @@ class ResultExporter:
         output_format: str = "",
         step_interval: int = 1,
         is_sparse: bool = False,
+        sampling_enabled: bool = False,
+        original_grid_shape: tuple | None = None,
+        n_sample_files: int = 0,
     ) -> Path:
         summary: dict = {}
 
@@ -271,7 +274,12 @@ class ResultExporter:
             "n_frames_total": len(results),
             "n_frames_exported": n_exported,
             "step_interval": step_interval,
+            "sampling_enabled": sampling_enabled,
+            "n_sample_files": n_sample_files,
         }
+
+        if sampling_enabled and original_grid_shape is not None:
+            summary["mesh"]["original_grid_shape"] = list(original_grid_shape)
 
         if len(results) > 0:
             last_frame = results[-1]
@@ -294,12 +302,18 @@ class ResultExporter:
     def _compute_boundary_residuals(self, u: np.ndarray) -> dict:
         residuals: dict = {}
 
-        def _residual_stats(arr: np.ndarray) -> dict:
-            return {
+        def _residual_stats(arr: np.ndarray, exclude_corners: bool = False) -> dict:
+            result = {
                 "max_abs": float(np.max(np.abs(arr))),
                 "rms": float(np.sqrt(np.mean(arr ** 2))),
                 "mean": float(np.mean(arr)),
             }
+            if exclude_corners and len(arr) > 2:
+                interior = arr[1:-1]
+                result["interior_max_abs"] = float(np.max(np.abs(interior)))
+                result["interior_rms"] = float(np.sqrt(np.mean(interior ** 2)))
+                result["interior_mean"] = float(np.mean(interior))
+            return result
 
         if self.config.dimension == 1:
             bc = self.config.boundary_conditions_1d
@@ -353,7 +367,7 @@ class ResultExporter:
                 res = alpha * u[0, :] + dudn - beta
             else:
                 res = np.zeros_like(u[0, :])
-            residuals["left"] = {"type": left_type, **_residual_stats(res)}
+            residuals["left"] = {"type": left_type, **_residual_stats(res, exclude_corners=True)}
 
             right_type = bc.right.type.value
             if bc.right.type == BoundaryType.dirichlet:
@@ -368,7 +382,7 @@ class ResultExporter:
                 res = alpha * u[-1, :] + dudn - beta
             else:
                 res = np.zeros_like(u[-1, :])
-            residuals["right"] = {"type": right_type, **_residual_stats(res)}
+            residuals["right"] = {"type": right_type, **_residual_stats(res, exclude_corners=True)}
 
             bottom_type = bc.bottom.type.value
             if bc.bottom.type == BoundaryType.dirichlet:
@@ -383,7 +397,7 @@ class ResultExporter:
                 res = alpha * u[:, 0] + dudn - beta
             else:
                 res = np.zeros_like(u[:, 0])
-            residuals["bottom"] = {"type": bottom_type, **_residual_stats(res)}
+            residuals["bottom"] = {"type": bottom_type, **_residual_stats(res, exclude_corners=True)}
 
             top_type = bc.top.type.value
             if bc.top.type == BoundaryType.dirichlet:
@@ -398,7 +412,7 @@ class ResultExporter:
                 res = alpha * u[:, -1] + dudn - beta
             else:
                 res = np.zeros_like(u[:, -1])
-            residuals["top"] = {"type": top_type, **_residual_stats(res)}
+            residuals["top"] = {"type": top_type, **_residual_stats(res, exclude_corners=True)}
 
         return residuals
 

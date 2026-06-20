@@ -1,0 +1,28 @@
+=== Testing _robin_beta in PoissonSolver ===
+  bc_left.type = BoundaryType.robin
+  bc_left.value = 0.0
+  bc_left.robin_alpha = 10.0
+  bc_left.robin_beta = 0.5
+
+  solver._robin_alpha(bc_left) = 10.0
+  solver._robin_beta(bc_left) = 0.5
+
+=== Testing actual boundary application ===
+  Before: u[0,5] = 0.0
+  Before: u[1,5] = 0.01
+  After:  u[0,5] = 0.018163265306122448
+  After:  u[1,5] = 0.01
+  alpha = 10.0
+  beta = 0.5
+  dx = 0.02564102564102564
+  Expected from formula: (u[1] + beta*dx)/(1+alpha*dx) = 0.01816327
+  Actual u[0] = 0.01816327
+  Match: True
+
+=== Robin residual check (should be ~0) ===
+  Residual max_abs: 0.50000000
+  Residual mean:    -0.02500000
+  Residual min:     -0.50000000
+  Residual max:     0.00000000
+
+=== Checking _apply_bc_2d method ===

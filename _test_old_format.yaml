@@ -1,0 +1,27 @@
+boundary_conditions_2d:
+  bottom:
+    type: dirichlet
+    value: 0.0
+  left:
+    type: robin
+    value: 0.5
+  right:
+    type: dirichlet
+    value: 0.0
+  top:
+    type: dirichlet
+    value: 0.0
+dimension: 2
+domain_2d:
+  nx: 40
+  ny: 40
+  x_max: 1.0
+  x_min: 0.0
+  y_max: 1.0
+  y_min: 0.0
+pde_type: poisson
+solver:
+  convergence_threshold: 1.0e-06
+  max_iterations: 10000
+  method: gauss_seidel
+source: np.sin(np.pi * x) * np.sin(np.pi * y)
