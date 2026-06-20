@@ -22,81 +22,115 @@ class HeatSolver:
         self.n_steps = config.time.n_steps
         self.results: list[np.ndarray] = []
 
-    def solve(self) -> list[np.ndarray]:
+    def solve(self, result_buffer=None) -> list[np.ndarray]:
         if self.config.dimension == 1:
-            return self._solve_1d()
-        return self._solve_2d()
+            return self._solve_1d(result_buffer)
+        return self._solve_2d(result_buffer)
 
     def _initial_condition_1d(self) -> np.ndarray:
         u = np.zeros(self.mesh.nx, dtype=np.float64)
         ic = self.config.initial_condition
         if ic is None:
-            return u
-        if ic.type == "constant" and ic.value is not None:
+            u[:] = 0.0
+        elif ic.type == "constant" and ic.value is not None:
             u[:] = ic.value
         elif ic.type == "function" and ic.expression is not None:
             func = _eval_expression(ic.expression)
             u = func(self.mesh.x)
-        bc = self.config.boundary_conditions_1d
-        u[0] = self._bc_value(bc.left)
-        u[-1] = self._bc_value(bc.right)
+        self._apply_bc_1d(u)
         return u
 
     def _initial_condition_2d(self) -> np.ndarray:
         u = np.zeros((self.mesh.nx, self.mesh.ny), dtype=np.float64)
         ic = self.config.initial_condition
         if ic is None:
-            return u
-        if ic.type == "constant" and ic.value is not None:
+            u[:] = 0.0
+        elif ic.type == "constant" and ic.value is not None:
             u[:] = ic.value
         elif ic.type == "function" and ic.expression is not None:
             func = _eval_expression(ic.expression)
             u = func(self.mesh.X, self.mesh.Y)
-        bc = self.config.boundary_conditions_2d
-        u[0, :] = self._bc_value(bc.left)
-        u[-1, :] = self._bc_value(bc.right)
-        u[:, 0] = self._bc_value(bc.bottom)
-        u[:, -1] = self._bc_value(bc.top)
+        self._apply_bc_2d(u)
         return u
 
     def _bc_value(self, bc_model) -> float:
         if bc_model.type == BoundaryType.dirichlet:
             return bc_model.value
         elif bc_model.type == BoundaryType.neumann:
-            return 0.0
+            return bc_model.value
         return bc_model.value
+
+    def _robin_alpha(self, bc_model) -> float:
+        if bc_model.type == BoundaryType.robin and bc_model.robin_alpha is not None:
+            return bc_model.robin_alpha
+        return 0.0
 
     def _apply_bc_1d(self, u: np.ndarray):
         bc = self.config.boundary_conditions_1d
-        u[0] = self._bc_value(bc.left)
-        u[-1] = self._bc_value(bc.right)
+        if bc.left.type == BoundaryType.dirichlet:
+            u[0] = bc.left.value
+        elif bc.left.type == BoundaryType.neumann:
+            u[0] = u[1] - bc.left.value * self.mesh.dx
+        elif bc.left.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.left)
+            beta = bc.left.value
+            u[0] = (u[1] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
+
+        if bc.right.type == BoundaryType.dirichlet:
+            u[-1] = bc.right.value
+        elif bc.right.type == BoundaryType.neumann:
+            u[-1] = u[-2] + bc.right.value * self.mesh.dx
+        elif bc.right.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.right)
+            beta = bc.right.value
+            u[-1] = (u[-2] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
     def _apply_bc_2d(self, u: np.ndarray):
         bc = self.config.boundary_conditions_2d
-        u[0, :] = self._bc_value(bc.left)
-        u[-1, :] = self._bc_value(bc.right)
-        u[:, 0] = self._bc_value(bc.bottom)
-        u[:, -1] = self._bc_value(bc.top)
-        if bc.left.type == BoundaryType.neumann:
-            u[0, :] = u[1, :] - bc.left.value * self.mesh.dx
-        if bc.right.type == BoundaryType.neumann:
-            u[-1, :] = u[-2, :] + bc.right.value * self.mesh.dx
-        if bc.bottom.type == BoundaryType.neumann:
-            u[:, 0] = u[:, 1] - bc.bottom.value * self.mesh.dy
-        if bc.top.type == BoundaryType.neumann:
-            u[:, -1] = u[:, -2] + bc.top.value * self.mesh.dy
-        if bc.left.type == BoundaryType.robin and bc.left.robin_alpha is not None:
-            u[0, :] = (u[1, :] - bc.left.robin_alpha * self.mesh.dx * bc.left.value) / (
-                1 - bc.left.robin_alpha * self.mesh.dx
-            )
-        if bc.right.type == BoundaryType.robin and bc.right.robin_alpha is not None:
-            u[-1, :] = (u[-2, :] + bc.right.robin_alpha * self.mesh.dx * bc.right.value) / (
-                1 + bc.right.robin_alpha * self.mesh.dx
-            )
 
-    def _solve_1d(self) -> list[np.ndarray]:
+        if bc.left.type == BoundaryType.dirichlet:
+            u[0, :] = bc.left.value
+        elif bc.left.type == BoundaryType.neumann:
+            u[0, :] = u[1, :] - bc.left.value * self.mesh.dx
+        elif bc.left.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.left)
+            beta = bc.left.value
+            u[0, :] = (u[1, :] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
+
+        if bc.right.type == BoundaryType.dirichlet:
+            u[-1, :] = bc.right.value
+        elif bc.right.type == BoundaryType.neumann:
+            u[-1, :] = u[-2, :] + bc.right.value * self.mesh.dx
+        elif bc.right.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.right)
+            beta = bc.right.value
+            u[-1, :] = (u[-2, :] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
+
+        if bc.bottom.type == BoundaryType.dirichlet:
+            u[:, 0] = bc.bottom.value
+        elif bc.bottom.type == BoundaryType.neumann:
+            u[:, 0] = u[:, 1] - bc.bottom.value * self.mesh.dy
+        elif bc.bottom.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.bottom)
+            beta = bc.bottom.value
+            u[:, 0] = (u[:, 1] + beta * self.mesh.dy) / (1.0 + alpha * self.mesh.dy)
+
+        if bc.top.type == BoundaryType.dirichlet:
+            u[:, -1] = bc.top.value
+        elif bc.top.type == BoundaryType.neumann:
+            u[:, -1] = u[:, -2] + bc.top.value * self.mesh.dy
+        elif bc.top.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.top)
+            beta = bc.top.value
+            u[:, -1] = (u[:, -2] + beta * self.mesh.dy) / (1.0 + alpha * self.mesh.dy)
+
+    def _solve_1d(self, result_buffer=None) -> list[np.ndarray]:
         u = self._initial_condition_1d()
-        self.results = [u.copy()]
+        if result_buffer is not None:
+            result_buffer.append(u)
+            self.results = result_buffer
+        else:
+            self.results = [u.copy()]
         method = self.method
         if method == "auto":
             r = self.alpha * self.dt / (self.mesh.dx ** 2)
@@ -110,11 +144,18 @@ class HeatSolver:
                 else:
                     u = self._step_1d_implicit(u)
                 self._apply_bc_1d(u)
-                self.results.append(u.copy())
+                if result_buffer is not None:
+                    result_buffer.append(u)
+                    if hasattr(result_buffer, 'flush'):
+                        result_buffer.flush()
+                else:
+                    self.results.append(u.copy())
                 elapsed = time.time() - start
                 remaining = elapsed / (step + 1) * (self.n_steps - step - 1)
                 pbar.set_postfix(elapsed=f"{elapsed:.1f}s", eta=f"{remaining:.1f}s")
                 pbar.update(1)
+        if result_buffer is not None:
+            return result_buffer
         return self.results
 
     def _step_1d_explicit(self, u: np.ndarray) -> np.ndarray:
@@ -136,9 +177,13 @@ class HeatSolver:
         u_new[1:-1] = thomas_solve(diag, off_diag, off_diag.copy(), rhs)
         return u_new
 
-    def _solve_2d(self) -> list[np.ndarray]:
+    def _solve_2d(self, result_buffer=None) -> list[np.ndarray]:
         u = self._initial_condition_2d()
-        self.results = [u.copy()]
+        if result_buffer is not None:
+            result_buffer.append(u)
+            self.results = result_buffer
+        else:
+            self.results = [u.copy()]
         method = self.method
         if method == "auto":
             rx = self.alpha * self.dt / (self.mesh.dx ** 2)
@@ -154,11 +199,18 @@ class HeatSolver:
                 else:
                     u = self._step_2d_implicit(u, use_sparse=large)
                 self._apply_bc_2d(u)
-                self.results.append(u.copy())
+                if result_buffer is not None:
+                    result_buffer.append(u)
+                    if hasattr(result_buffer, 'flush'):
+                        result_buffer.flush()
+                else:
+                    self.results.append(u.copy())
                 elapsed = time.time() - start
                 remaining = elapsed / (step + 1) * (self.n_steps - step - 1)
                 pbar.set_postfix(elapsed=f"{elapsed:.1f}s", eta=f"{remaining:.1f}s")
                 pbar.update(1)
+        if result_buffer is not None:
+            return result_buffer
         return self.results
 
     def _step_2d_explicit(self, u: np.ndarray) -> np.ndarray:

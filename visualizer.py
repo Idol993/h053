@@ -23,6 +23,14 @@ class Visualizer:
         self.output_dir = Path(output_dir)
         self.frames_dir = self.output_dir / "frames"
         self.frames_dir.mkdir(parents=True, exist_ok=True)
+        self._is_steady = config.pde_type == PDEType.poisson
+
+    def _time_label(self, step: int) -> str:
+        if self._is_steady:
+            return "steady state"
+        if self.config.time:
+            return f"t={step * self.config.time.dt:.4f}"
+        return f"step={step}"
 
     def generate_png_sequence(
         self,
@@ -58,7 +66,7 @@ class Visualizer:
             ax.set_xlabel("x")
             ax.set_ylabel("u")
             pde_name = self.config.pde_type.value
-            ax.set_title(f"{pde_name} equation - t={step * self.config.time.dt:.4f}")
+            ax.set_title(f"{pde_name} equation - {self._time_label(step)}")
             ax.grid(True, alpha=0.3)
             filepath = self.frames_dir / f"frame_{step:06d}.png"
             fig.savefig(filepath, dpi=dpi, bbox_inches="tight")
@@ -84,10 +92,9 @@ class Visualizer:
             im = ax.pcolormesh(x, y, u.T, cmap="hot", norm=norm, shading="auto")
             fig.colorbar(im, ax=ax, label="u")
             pde_name = self.config.pde_type.value
-            dt = self.config.time.dt if self.config.time else 0
             ax.set_xlabel("x")
             ax.set_ylabel("y")
-            ax.set_title(f"{pde_name} equation - t={step * dt:.4f}")
+            ax.set_title(f"{pde_name} equation - {self._time_label(step)}")
             filepath = self.frames_dir / f"frame_{step:06d}.png"
             fig.savefig(filepath, dpi=dpi, bbox_inches="tight")
             plt.close(fig)
@@ -133,14 +140,13 @@ class Visualizer:
         ax.set_xlabel("x")
         ax.set_ylabel("u")
         pde_name = self.config.pde_type.value
-        title = ax.set_title(f"{pde_name} equation - t=0.0000")
+        title = ax.set_title(f"{pde_name} equation - {self._time_label(0)}")
         ax.grid(True, alpha=0.3)
 
         def update(frame_idx):
             step, u = frames_data[frame_idx]
             line.set_ydata(u)
-            dt = self.config.time.dt if self.config.time else 0
-            title.set_text(f"{pde_name} equation - t={step * dt:.4f}")
+            title.set_text(f"{pde_name} equation - {self._time_label(step)}")
             return line, title
 
         ani = animation.FuncAnimation(
@@ -191,15 +197,14 @@ class Visualizer:
         im = ax.pcolormesh(x, y, frames_data[0][1].T, cmap="hot", norm=norm, shading="auto")
         fig.colorbar(im, ax=ax, label="u")
         pde_name = self.config.pde_type.value
-        title = ax.set_title(f"{pde_name} equation - t=0.0000")
+        title = ax.set_title(f"{pde_name} equation - {self._time_label(0)}")
         ax.set_xlabel("x")
         ax.set_ylabel("y")
 
         def update(frame_idx):
             step, u = frames_data[frame_idx]
             im.set_array(u.T.ravel())
-            dt = self.config.time.dt if self.config.time else 0
-            title.set_text(f"{pde_name} equation - t={step * dt:.4f}")
+            title.set_text(f"{pde_name} equation - {self._time_label(step)}")
             return im, title
 
         ani = animation.FuncAnimation(

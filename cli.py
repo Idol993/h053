@@ -12,7 +12,7 @@ import numpy as np
 from config_loader import PDEConfig, PDEType, load_config
 from mesh import Mesh1D, Mesh2D, adjust_dt_for_stability, check_stability, generate_mesh
 from solver import SOLVER_REGISTRY
-from exporter import ResultExporter
+from exporter import ResultExporter, ResultBuffer
 from visualizer import Visualizer
 
 logging.basicConfig(
@@ -134,6 +134,20 @@ def solve(
     solver_cls = SOLVER_REGISTRY[pde_config.pde_type.value]
     solver = solver_cls(pde_config, mesh)
 
+    output_path = Path(output)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    result_buffer = None
+    if use_memmap:
+        result_buffer = ResultBuffer.from_config(
+            pde_config, output_path, use_memmap=True
+        )
+        click.echo(f"\nMemmap mode: results streaming to {result_buffer.memmap_path}")
+        memmap_size_mb = (
+            np.prod(result_buffer.full_shape) * 4 / (1024 * 1024)
+        )
+        click.echo(f"  Expected size: {memmap_size_mb:.1f} MB (float32)")
+
     click.echo(f"\nSolver       : {solver_cls.__name__}")
     click.echo(f"Output dir   : {output}")
     click.echo(f"Output format: {output_format}")
@@ -141,14 +155,16 @@ def solve(
     click.echo("Starting solve...")
 
     solve_start = time.time()
-    results = solver.solve()
+    results = solver.solve(result_buffer=result_buffer)
     solve_time = time.time() - solve_start
+
+    if use_memmap and result_buffer is not None:
+        result_buffer.flush()
+        size_mb = result_buffer.memmap_path.stat().st_size / (1024 * 1024)
+        click.echo(f"\nMemmap results saved: {result_buffer.memmap_path} ({size_mb:.1f} MB)")
 
     click.echo(f"\nSolve completed in {solve_time:.2f}s")
     click.echo(f"Result frames: {len(results)}")
-
-    output_path = Path(output)
-    output_path.mkdir(parents=True, exist_ok=True)
 
     fmt_parts = [f.strip().lower() for f in output_format.split("+")]
 
@@ -158,7 +174,9 @@ def solve(
         csv_paths = exporter.export_csv(results, step_interval=step_interval)
         click.echo(f"  Exported {len(csv_paths)} CSV files")
 
-    if use_memmap:
+    if use_memmap and result_buffer is not None:
+        pass
+    elif "memmap" in fmt_parts:
         click.echo("\nSaving memmap data...")
         exporter = ResultExporter(pde_config, output_path)
         memmap_path = exporter.save_memmap(results)
@@ -185,6 +203,9 @@ def solve(
             click.echo(f"  Animation saved: {mp4_path} ({size_mb:.1f} MB)")
         else:
             click.echo("  WARNING: MP4 generation failed (ffmpeg may not be installed)")
+
+    if use_memmap and result_buffer is not None:
+        result_buffer.close()
 
     click.echo("\n" + "=" * 60)
     click.echo("  Done!")

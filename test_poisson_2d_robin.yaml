@@ -1,0 +1,32 @@
+pde_type: poisson
+dimension: 2
+
+domain_2d:
+  x_min: 0.0
+  x_max: 1.0
+  y_min: 0.0
+  y_max: 1.0
+  nx: 80
+  ny: 80
+
+boundary_conditions_2d:
+  left:
+    type: robin
+    value: 0.5
+    robin_alpha: 10.0
+  right:
+    type: dirichlet
+    value: 0.0
+  top:
+    type: dirichlet
+    value: 0.0
+  bottom:
+    type: dirichlet
+    value: 0.0
+
+source: "np.sin(np.pi * x) * np.sin(np.pi * y)"
+
+solver:
+  method: gauss_seidel
+  max_iterations: 10000
+  convergence_threshold: 1.0e-6

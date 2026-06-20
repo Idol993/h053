@@ -20,10 +20,10 @@ class WaveSolver:
         self.n_steps = config.time.n_steps
         self.results: list[np.ndarray] = []
 
-    def solve(self) -> list[np.ndarray]:
+    def solve(self, result_buffer=None) -> list[np.ndarray]:
         if self.config.dimension == 1:
-            return self._solve_1d()
-        return self._solve_2d()
+            return self._solve_1d(result_buffer)
+        return self._solve_2d(result_buffer)
 
     def _initial_condition_1d(self) -> np.ndarray:
         u = np.zeros(self.mesh.nx, dtype=np.float64)
@@ -78,31 +78,71 @@ class WaveSolver:
             return bc_model.value
         return 0.0
 
+    def _robin_alpha(self, bc_model) -> float:
+        if bc_model.type == BoundaryType.robin and bc_model.robin_alpha is not None:
+            return bc_model.robin_alpha
+        return 0.0
+
     def _apply_bc_1d(self, u: np.ndarray):
         bc = self.config.boundary_conditions_1d
-        u[0] = self._bc_value(bc.left)
-        u[-1] = self._bc_value(bc.right)
-        if bc.left.type == BoundaryType.neumann:
+        if bc.left.type == BoundaryType.dirichlet:
+            u[0] = bc.left.value
+        elif bc.left.type == BoundaryType.neumann:
             u[0] = u[1] - bc.left.value * self.mesh.dx
-        if bc.right.type == BoundaryType.neumann:
+        elif bc.left.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.left)
+            beta = bc.left.value
+            u[0] = (u[1] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
+
+        if bc.right.type == BoundaryType.dirichlet:
+            u[-1] = bc.right.value
+        elif bc.right.type == BoundaryType.neumann:
             u[-1] = u[-2] + bc.right.value * self.mesh.dx
+        elif bc.right.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.right)
+            beta = bc.right.value
+            u[-1] = (u[-2] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
 
     def _apply_bc_2d(self, u: np.ndarray):
         bc = self.config.boundary_conditions_2d
-        u[0, :] = self._bc_value(bc.left)
-        u[-1, :] = self._bc_value(bc.right)
-        u[:, 0] = self._bc_value(bc.bottom)
-        u[:, -1] = self._bc_value(bc.top)
-        if bc.left.type == BoundaryType.neumann:
-            u[0, :] = u[1, :] - bc.left.value * self.mesh.dx
-        if bc.right.type == BoundaryType.neumann:
-            u[-1, :] = u[-2, :] + bc.right.value * self.mesh.dx
-        if bc.bottom.type == BoundaryType.neumann:
-            u[:, 0] = u[:, 1] - bc.bottom.value * self.mesh.dy
-        if bc.top.type == BoundaryType.neumann:
-            u[:, -1] = u[:, -2] + bc.top.value * self.mesh.dy
 
-    def _solve_1d(self) -> list[np.ndarray]:
+        if bc.left.type == BoundaryType.dirichlet:
+            u[0, :] = bc.left.value
+        elif bc.left.type == BoundaryType.neumann:
+            u[0, :] = u[1, :] - bc.left.value * self.mesh.dx
+        elif bc.left.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.left)
+            beta = bc.left.value
+            u[0, :] = (u[1, :] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
+
+        if bc.right.type == BoundaryType.dirichlet:
+            u[-1, :] = bc.right.value
+        elif bc.right.type == BoundaryType.neumann:
+            u[-1, :] = u[-2, :] + bc.right.value * self.mesh.dx
+        elif bc.right.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.right)
+            beta = bc.right.value
+            u[-1, :] = (u[-2, :] + beta * self.mesh.dx) / (1.0 + alpha * self.mesh.dx)
+
+        if bc.bottom.type == BoundaryType.dirichlet:
+            u[:, 0] = bc.bottom.value
+        elif bc.bottom.type == BoundaryType.neumann:
+            u[:, 0] = u[:, 1] - bc.bottom.value * self.mesh.dy
+        elif bc.bottom.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.bottom)
+            beta = bc.bottom.value
+            u[:, 0] = (u[:, 1] + beta * self.mesh.dy) / (1.0 + alpha * self.mesh.dy)
+
+        if bc.top.type == BoundaryType.dirichlet:
+            u[:, -1] = bc.top.value
+        elif bc.top.type == BoundaryType.neumann:
+            u[:, -1] = u[:, -2] + bc.top.value * self.mesh.dy
+        elif bc.top.type == BoundaryType.robin:
+            alpha = self._robin_alpha(bc.top)
+            beta = bc.top.value
+            u[:, -1] = (u[:, -2] + beta * self.mesh.dy) / (1.0 + alpha * self.mesh.dy)
+
+    def _solve_1d(self, result_buffer=None) -> list[np.ndarray]:
         u_prev = self._initial_condition_1d()
         v0 = self._initial_velocity_1d()
         self._apply_bc_1d(u_prev)
@@ -116,7 +156,14 @@ class WaveSolver:
         )
         self._apply_bc_1d(u_curr)
 
-        self.results = [u_prev.copy(), u_curr.copy()]
+        if result_buffer is not None:
+            result_buffer.append(u_prev)
+            result_buffer.append(u_curr)
+            if hasattr(result_buffer, 'flush'):
+                result_buffer.flush()
+            self.results = result_buffer
+        else:
+            self.results = [u_prev.copy(), u_curr.copy()]
 
         start = time.time()
         with tqdm(total=self.n_steps - 1, desc="Wave 1D", unit="step") as pbar:
@@ -128,16 +175,23 @@ class WaveSolver:
                     + r2 * (u_curr[2:] - 2 * u_curr[1:-1] + u_curr[:-2])
                 )
                 self._apply_bc_1d(u_next)
-                self.results.append(u_next.copy())
+                if result_buffer is not None:
+                    result_buffer.append(u_next)
+                    if hasattr(result_buffer, 'flush'):
+                        result_buffer.flush()
+                else:
+                    self.results.append(u_next.copy())
                 u_prev = u_curr
                 u_curr = u_next
                 elapsed = time.time() - start
                 remaining = elapsed / step * (self.n_steps - 1 - step)
                 pbar.set_postfix(elapsed=f"{elapsed:.1f}s", eta=f"{remaining:.1f}s")
                 pbar.update(1)
+        if result_buffer is not None:
+            return result_buffer
         return self.results
 
-    def _solve_2d(self) -> list[np.ndarray]:
+    def _solve_2d(self, result_buffer=None) -> list[np.ndarray]:
         u_prev = self._initial_condition_2d()
         v0 = self._initial_velocity_2d()
         self._apply_bc_2d(u_prev)
@@ -154,7 +208,14 @@ class WaveSolver:
         )
         self._apply_bc_2d(u_curr)
 
-        self.results = [u_prev.copy(), u_curr.copy()]
+        if result_buffer is not None:
+            result_buffer.append(u_prev)
+            result_buffer.append(u_curr)
+            if hasattr(result_buffer, 'flush'):
+                result_buffer.flush()
+            self.results = result_buffer
+        else:
+            self.results = [u_prev.copy(), u_curr.copy()]
 
         start = time.time()
         with tqdm(total=self.n_steps - 1, desc="Wave 2D", unit="step") as pbar:
@@ -167,11 +228,18 @@ class WaveSolver:
                     + ry2 * (u_curr[1:-1, 2:] - 2 * u_curr[1:-1, 1:-1] + u_curr[1:-1, :-2])
                 )
                 self._apply_bc_2d(u_next)
-                self.results.append(u_next.copy())
+                if result_buffer is not None:
+                    result_buffer.append(u_next)
+                    if hasattr(result_buffer, 'flush'):
+                        result_buffer.flush()
+                else:
+                    self.results.append(u_next.copy())
                 u_prev = u_curr
                 u_curr = u_next
                 elapsed = time.time() - start
                 remaining = elapsed / step * (self.n_steps - 1 - step)
                 pbar.set_postfix(elapsed=f"{elapsed:.1f}s", eta=f"{remaining:.1f}s")
                 pbar.update(1)
+        if result_buffer is not None:
+            return result_buffer
         return self.results
